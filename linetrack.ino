@@ -5,8 +5,8 @@ Servo S;
 #define LS A2
 #define MS A1
 #define RS A0
-#define R A3
-#define L A4
+#define R A3    //extreme right sensor
+#define L A4    //extreme left sensor
 #define echoPin 11
 
 //define outputs
@@ -20,7 +20,6 @@ Servo S;
 
 void setup()
 {
-  // put your setup code here, to run once:
   pinMode(LS,INPUT);
   pinMode(MS,INPUT);
   pinMode(RS,INPUT);
@@ -45,14 +44,13 @@ void setup()
   Serial.begin(9600);
 }
 
+//possible improvements: 1. combine all movement functions, 2. use PWM even w/o enable pins
 void forward()
 {
    digitalWrite(LMA, HIGH);
    digitalWrite(LMB, LOW);
    digitalWrite(RMA, HIGH);
    digitalWrite(RMB, LOW);
-   
-   Serial.println("forward");
 }
 
 void turnLeft()
@@ -62,8 +60,6 @@ void turnLeft()
   digitalWrite(LMB, LOW);
   digitalWrite(RMA, HIGH);
   digitalWrite(RMB, LOW);
- 
-  Serial.println("left");
 }
 
 void turnRight()
@@ -72,8 +68,6 @@ void turnRight()
    digitalWrite(LMB, LOW);
    digitalWrite(RMA, LOW);
    digitalWrite(RMB, LOW);
-   
-   Serial.println("right");
 }
 
 void reverse()
@@ -82,8 +76,6 @@ void reverse()
    digitalWrite(LMB, HIGH);
    digitalWrite(RMA, LOW);
    digitalWrite(RMB, HIGH);
-   
-   Serial.println("reverse");
 }
 
 void sharpRight()
@@ -92,8 +84,14 @@ void sharpRight()
    digitalWrite(LMB, LOW);
    digitalWrite(RMA, LOW);
    digitalWrite(RMB, HIGH);
-   
-   Serial.println("sharp right");
+}
+
+void sharpLeft()
+{
+   digitalWrite(LMA, LOW);
+   digitalWrite(LMB, HIGH);
+   digitalWrite(RMA, HIGH);
+   digitalWrite(RMB, LOW);
 }
 
 void halt()
@@ -102,71 +100,52 @@ void halt()
   digitalWrite(LMB, LOW);
   digitalWrite(RMA, LOW);
   digitalWrite(RMB, LOW);
- 
-  Serial.println("halt");
 }
 
 long duration;
 int distance;
 int angle=0;
-int val;
-int box=0;
-int Dmin=6;
-int Dmax=12;
+bool box=false;
+int dMin=4;
+int dMax=7;
+int turned=0;
+char prev;
 
-int FindDistance()
-{ //USING aULTRASONIC SENSOR
+int findDistance()
+{ 
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
   digitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
-  // Reads the echoPin, returns the sound wave travel time in microseconds
+  
   duration = pulseIn(echoPin, HIGH);
-  // Calculating the distance
-  distance= duration*0.034/2;
-  // Prints the distance on the Serial Monitor
-  Serial.print("Distance: ");
-  Serial.println(distance);
-  return distance;
-   
+  distance = duration*0.034/2;
+  return distance;  
 }
+
 void drop()
 {
-  delay(100);
   for (; angle>=0; )
   {
     angle=angle-15;
     S.write(angle);
-    val=S.read();
-    Serial.println(val);
-    delay(100);
+    delay(50);
   }
-  
-  Serial.println("drop");
 }
 
 void grab()
 {
-  delay(100);
   while(angle<=180)
   {
      angle=angle+15;
      S.write(angle);
-     val=S.read();
-     Serial.println(val);
-     delay(100);
-  }
-  
-  Serial.println("grab");
- 
+     delay(50);
+  } 
 }
 
-char prev;
 int allWhite()
-{
-  return digitalRead(L) && digitalRead(LS) && digitalRead(MS) && digitalRead(RS) && digitalRead(R);
-}
+{return digitalRead(L) && digitalRead(LS) && digitalRead(MS) && digitalRead(RS) && digitalRead(R); }
 
 void reacquire()
 {
@@ -174,77 +153,96 @@ void reacquire()
   {
     case 'R': do
               {
-                turnLeft();
-                delay(50);
-                halt();
-                delay(50);
-              }
-              while(allWhite());
-              Serial.println("reacquire");
+                sharpLeft(); delay(50);
+                halt(); delay(100);
+              } while(allWhite());
               break;
               
     case 'L': do
               {
-                turnRight();
-                delay(50);
-                halt();
-                delay(50);
-              }
-              while(allWhite());
-              Serial.println("reacquire");
+                sharpRight(); delay(50);
+                halt(); delay(100);
+              } while(allWhite());
               break;
   }
-  delay(100);
 }
 
 //digitalRead() returns true when IR sensor detects white line
 
 void loop() {
+
+  //grab box
+  if((findDistance()>=dMin && findDistance()<=dMax) && box==false)
+  {
+      halt(); delay(200);
+      grab();
+      box=true; 
+  }
   
-  if((FindDistance()>=Dmin&&FindDistance()<=Dmax)&&box==false)
-  {
-      halt();
-      delay(500);
-      grab();
-      box=true;
-  }
-  else if ((FindDistance()<Dmin)&&box==false)
-  {
-    do
-    {
-       reverse();
-       delay(50);
-       halt();
-    }while(!(FindDistance()<Dmin));
-  }
+  //navigation
   else if (digitalRead(LS) && !digitalRead(MS) && digitalRead(RS))
-    {forward(); prev='F';}
-  else if (digitalRead(LS) && (!digitalRead(RS) || !(digitalRead(R))))
-    {turnRight(); prev='R';}
+    {forward();}
+   else if (digitalRead(LS) && (!digitalRead(RS) || !(digitalRead(R))))
+    {sharpRight(); prev='R';}
   else if ((!digitalRead(LS) || !digitalRead(L))&& digitalRead(RS))
-    {turnLeft(); prev='L';}
-  else if (!digitalRead(LS) && digitalRead(MS) && !digitalRead(RS))
-    {
-      halt();
-      drop();
-    }
+    {sharpLeft(); prev='L';}
+  
+  //base reached
+  else if (!digitalRead(LS) && digitalRead(MS) && !digitalRead(RS)) 
+    {forward(); delay(25);}
+    
+  //correction
   else if(allWhite())
+    {reacquire();}
+
+   else if (!digitalRead(LS) && !digitalRead(MS) && !digitalRead(RS))
    {
-    reacquire();
-   }
-  else
-    {
-      halt();
-      grab();
-      delay(500);
-      do
+      forward(); delay(25);
+      
+      if(box==true && turned==0)
         {
-          sharpRight();
-          prev='R';
-        } while (!(digitalRead(LS)==digitalRead(MS)==digitalRead(RS)));
-    }
+          sharpLeft(); delay(800);
+          turned=1;      
+        }
+        
+       
+       //for crooked tracks: direction depends on track
+       else if (box==false && turned==0)
+       {
+          reverse(); delay(450);
+          
+         do
+          { 
+            sharpLeft(); delay(50);
+            halt(); delay(200);
+           } while(findDistance()>20);
+          
+          sharpLeft(); delay(25);
+          
+           do
+            {
+               forward(); delay(25);
+               halt(); delay(50);
+            } while(findDistance()>6);
+
+            halt(); delay(200);
+            grab();
+            box=true;
+
+            sharpLeft(); delay(550);
+            turned=1;       
+        }
+
+        else if (box==true && turned==1 && (!digitalRead(LS) && digitalRead(MS) && !digitalRead(RS)))
+        {
+          reverse(); delay(500);
+          halt(); delay(100);
+          drop();
+          while(1){;}
+        }              
+   }
  
-  delay(50);
+  delay(100);
   halt();
-  delay(50);
+  delay(100);
 }
